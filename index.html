@@ -474,6 +474,16 @@
     margin-bottom: 4px;
   }
 
+  .track-name a, .artist-name a, .album-line a{
+    color: inherit;
+    text-decoration: none;
+    text-underline-offset: 2px;
+  }
+  .track-name a:hover, .artist-name a:hover, .album-line a:hover{
+    text-decoration: underline;
+    color: var(--gold-dim);
+  }
+
   .tag-row{
     display: flex;
     flex-wrap: wrap;
@@ -722,6 +732,14 @@ function splitMulti(val){
   return val.split(",").map(v=>v.trim()).filter(Boolean);
 }
 
+// Converts a Spotify URI like "spotify:track:abc123" into an open.spotify.com link.
+function spotifyUrl(uri){
+  const trimmed = (uri||"").trim();
+  const parts = trimmed.split(":");
+  if(parts.length < 3 || parts[0] !== "spotify") return "";
+  return `https://open.spotify.com/${parts[1]}/${parts[2]}`;
+}
+
 function gvizDateToString(v){
   // gviz returns dates as literal strings like "Date(2023,0,15)" (month is 0-indexed)
   const m = /^Date\(([^)]+)\)$/.exec(v);
@@ -941,6 +959,28 @@ function cardHTML(r){
   if(textVar) tags.push(`<span class="tag">variance ${escapeHTML(textVar)}</span>`);
   if(isChart) tags.push(`<span class="tag chart">charted</span>`);
 
+  // Track name -> Spotify track link
+  const trackUrl = spotifyUrl(r["Track URI"]);
+  const trackNameHTML = trackUrl
+    ? `<a href="${trackUrl}" target="_blank" rel="noopener">${escapeHTML(r["Track Name"]||"")}</a>`
+    : escapeHTML(r["Track Name"]||"");
+
+  // Artist name(s) -> individual Spotify artist links, positionally paired with Artist URI(s)
+  const artistNames = splitMulti(r["Artist Name(s)"]);
+  const artistUris = splitMulti(r["Artist URI(s)"]);
+  const artistNameHTML = artistNames.length
+    ? artistNames.map((name, i) => {
+        const url = spotifyUrl(artistUris[i]);
+        return url ? `<a href="${url}" target="_blank" rel="noopener">${escapeHTML(name)}</a>` : escapeHTML(name);
+      }).join(", ")
+    : escapeHTML(r["Artist Name(s)"]||"");
+
+  // Album name -> Spotify album link
+  const albumUrl = spotifyUrl(r["Album URI"]);
+  const albumNameHTML = albumUrl
+    ? `<a href="${albumUrl}" target="_blank" rel="noopener">${escapeHTML(r["Album Name"]||"")}</a>`
+    : escapeHTML(r["Album Name"]||"");
+
   return `
   <div class="card">
     <div class="art-wrap">
@@ -951,9 +991,9 @@ function cardHTML(r){
       </button>
     </div>
     <div class="card-body">
-      <div class="track-name">${escapeHTML(r["Track Name"]||"")}</div>
-      <div class="artist-name">${escapeHTML(r["Artist Name(s)"]||"")}</div>
-      <div class="album-line">${escapeHTML(r["Album Name"]||"")}${year? " · "+year : ""}${r["Track Duration (ms)"]? " · "+fmtDuration(r["Track Duration (ms)"]) : ""}</div>
+      <div class="track-name">${trackNameHTML}</div>
+      <div class="artist-name">${artistNameHTML}</div>
+      <div class="album-line">${albumNameHTML}${year? " · "+year : ""}${r["Track Duration (ms)"]? " · "+fmtDuration(r["Track Duration (ms)"]) : ""}</div>
       <div class="tag-row">${tags.join("")}</div>
     </div>
   </div>`;
