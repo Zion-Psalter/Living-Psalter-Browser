@@ -482,8 +482,24 @@ box-shadow: 0 2px 6px rgba(0,0,0,0.4);
 .psalm-badge .lbl{
 font-size: 6px;
 letter-spacing: 0.08em;
+text-transform: uppercase;
 color: var(--text-muted);
 margin-bottom: 1px;
+}
+.psalm-badge a{ color: inherit !important; text-decoration: none !important; }
+.psalm-badge .psalm-hover-ref{
+position: absolute;
+inset: 0;
+clip-path: circle(50%);
+color: transparent;
+user-select: none;
+}
+.psalm-badge .psalm-hover-ref a.rtBibleRef{
+display: block;
+width: 100%;
+height: 100%;
+color: transparent !important;
+text-decoration: none !important;
 }
 
 .play-btn{
@@ -665,6 +681,27 @@ display: inline-block;
 </style>
 </head>
 <body>
+
+<!-- RefTagger: turns Bible references (e.g. "Psalm 23") found in the page text into
+hoverable tooltips showing the verse. It only scans once on load, before any song
+cards exist, so tagPsalmRefs() below re-triggers it after every dynamic grid render. -->
+<script>
+var refTagger = {
+  settings: {
+    bibleVersion: 'ESV',
+    bibleReader: 'app.logos'
+  }
+};
+
+(function(d, t) {
+  var n=d.querySelector('[nonce]');
+  refTagger.settings.nonce = n && (n.nonce||n.getAttribute('nonce'));
+  var g = d.createElement(t), s = d.getElementsByTagName(t)[0];
+  g.src = 'https://api.reftagger.com/v2/RefTagger.js';
+  g.nonce = refTagger.settings.nonce;
+  s.parentNode.insertBefore(g, s);
+}(document, 'script'));
+</script>
 
 <header class="top">
 <div class="top-inner">
@@ -1107,6 +1144,39 @@ btn.addEventListener('click', onPlayClick);
 });
 
 els.loadMoreWrap.style.display = (filteredRows.length > visibleCount) ? "flex" : "none";
+tagPsalmRefs();
+}
+
+// RefTagger only auto-scans once, on load. Since cards are rendered dynamically (and
+// re-rendered on every filter/sort/search change), each render asks it to re-scan just
+// the grid (passing it as the root node — RefTagger doesn't keep settings.rootNode
+// around after init, it wants the node passed straight into tag()). If RefTagger.js
+// hasn't finished loading yet (race with the sheet fetch), retry a few times rather
+// than silently giving up.
+let refTaggerRetries = 0;
+function tagPsalmRefs(){
+if(window.refTagger && typeof refTagger.tag === "function"){
+refTagger.tag(els.grid);
+fixPsalmRefLinks();
+refTaggerRetries = 0;
+}else if(refTaggerRetries < 15){
+refTaggerRetries++;
+setTimeout(tagPsalmRefs, 400);
+}
+}
+
+// RefTagger's own auto-generated href is built from the padded "1-200" reference
+// above, which ref.ly cannot resolve (an out-of-range verse either 404s or, worse,
+// spills over into the following psalms' verses). RefTagger's tooltip preview reads
+// data-reference/data-version at hover time (not href) and already clamps that padded
+// range correctly, so it's left untouched — only the click-through href is replaced
+// with a plain whole-chapter reference (no verse number at all, which ref.ly resolves
+// reliably), routed through the Logos reader set in refTagger.settings.bibleReader.
+function fixPsalmRefLinks(){
+els.grid.querySelectorAll('.psalm-hover-ref[data-psalm]').forEach(wrap=>{
+const a = wrap.querySelector('a.rtBibleRef');
+if(a) a.href = `https://ref.ly/${encodeURIComponent('Ps ' + wrap.dataset.psalm)};esv?t=app.logos`;
+});
 }
 
 function cardHTML(r){
@@ -1163,11 +1233,17 @@ const albumNameHTML = albumUrl
 const trackArtist = `${(r["Track Name"]||"").trim()} || ${(r["Artist Name(s)"]||"").trim()}`;
 const rateUrl = `${FORM_BASE_URL}?${FORM_TRACK_ARTIST_PARAM}=${encodeURIComponent(trackArtist)}`;
 
+// RefTagger only tags references with a verse number, never a bare chapter like
+// "Psalm 23" — and the sheet has no per-song verse data. ".psalm-hover-ref" is an
+// invisible span carrying "Psalm N:1-200"; RefTagger tags it (its ref.ly/Biblia
+// backend clamps the oversized end verse to whatever the chapter actually has), and
+// CSS below stretches the resulting link to cover the whole circular badge so hovering
+// anywhere on it shows the real full-psalm preview tooltip.
 return `
 <div class="card">
 <div class="art-wrap">
 ${img ? `<img src="${img}" loading="lazy" alt="">` : ""}
-${psalm ? `<div class="psalm-badge"><span class="lbl">PSALM</span>${psalm}</div>` : ""}
+${psalm ? `<div class="psalm-badge"><span class="lbl">Psalm</span> ${psalm}<span class="psalm-hover-ref" data-psalm="${escapeHTML(psalm)}" aria-hidden="true">Psalm ${psalm}:1-200</span></div>` : ""}
 ${chartBadgeHTML}
 <button class="play-btn" data-src="${preview}" ${preview? "" : "disabled"} title="${preview? "Play 30s preview" : "No preview available"}">
 <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6,4 20,12 6,20"></polygon></svg>
